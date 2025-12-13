@@ -91,12 +91,15 @@ export async function POST(req: Request) {
 
     const slug = slugify(title);
     const filePath = `content/${slug}.md`;
+    // 使用当前时间作为更新时间（ISO 格式，YAML 中需要引号）
+    const updatedAt = new Date().toISOString();
     const md = `---
 slug: ${slug}
 title: ${title}
 subtitle:
 image:
 link: ${link}
+updatedAt: "${updatedAt}"
 intro: ""
 principle: ""
 steps: []

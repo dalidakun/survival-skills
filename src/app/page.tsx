@@ -28,6 +28,15 @@ export default function HomePage({
   // 使用本地时区的今天，因为用户看到的是本地时间
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
+  // 调试：输出前3篇文章的信息（仅在开发环境）
+  if (process.env.NODE_ENV === 'development' && visible.length > 0) {
+    console.log('Top 3 articles:');
+    visible.slice(0, 3).forEach((skill, idx) => {
+      console.log(`${idx + 1}. ${skill.title}: updatedAtMs=${skill.updatedAtMs}, date=${skill.updatedAtMs ? new Date(skill.updatedAtMs).toISOString() : 'N/A'}`);
+    });
+    console.log(`Today: ${todayStr}`);
+  }
+
   return (
     <section className="space-y-2">
       {visible.map((skill) => {
@@ -37,6 +46,11 @@ export default function HomePage({
           const updatedDate = new Date(skill.updatedAtMs);
           const updatedStr = `${updatedDate.getFullYear()}-${String(updatedDate.getMonth() + 1).padStart(2, '0')}-${String(updatedDate.getDate()).padStart(2, '0')}`;
           isToday = updatedStr === todayStr;
+          
+          // 调试输出（仅在开发环境）
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Article: ${skill.title}, updatedStr: ${updatedStr}, todayStr: ${todayStr}, isToday: ${isToday}`);
+          }
         }
         
         return (
