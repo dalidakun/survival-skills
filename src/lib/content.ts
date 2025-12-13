@@ -27,6 +27,20 @@ function parseSkill(filePath: string): SkillContent | null {
     return null;
   }
 
+  // 优先使用 frontmatter 中的 updatedAt，否则使用文件修改时间
+  let updatedAtMs: number | undefined;
+  if (data.updatedAt) {
+    // 如果 frontmatter 中有 updatedAt，使用它
+    const updatedAtStr = String(data.updatedAt);
+    const updatedAtDate = new Date(updatedAtStr);
+    if (!isNaN(updatedAtDate.getTime())) {
+      updatedAtMs = updatedAtDate.getTime();
+    } else {
+      // 如果解析失败，尝试其他格式
+      console.warn(`Failed to parse updatedAt: ${updatedAtStr}`);
+    }
+  }
+
   return {
     slug: String(data.slug),
     title: String(data.title),
@@ -36,6 +50,7 @@ function parseSkill(filePath: string): SkillContent | null {
         "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80"
     ),
     link: data.link ? String(data.link) : undefined,
+    updatedAtMs, // 先设置为 undefined，后面会用文件修改时间或这个值
     intro: String(data.intro || ""),
     principle: String(data.principle || ""),
     steps: Array.isArray(data.steps)
@@ -66,9 +81,14 @@ export function getAllSkills(): SkillContent[] {
       const stat = fs.statSync(filePath);
       const skill = parseSkill(filePath);
       if (skill) {
-        skill.updatedAtMs = stat.mtimeMs;
+        // 如果 frontmatter 中没有 updatedAtMs，使用文件修改时间
+        if (!skill.updatedAtMs) {
+          skill.updatedAtMs = stat.mtimeMs;
+        }
       }
-      return { skill, mtime: stat.mtimeMs };
+      // 使用 updatedAtMs 或文件修改时间进行排序
+      const sortTime = skill?.updatedAtMs || stat.mtimeMs;
+      return { skill, mtime: sortTime };
     })
     .filter(
       (item): item is { skill: SkillContent; mtime: number } =>
@@ -89,8 +109,11 @@ export function getSkill(slug: string): SkillContent | null {
     const filePath = path.join(contentDir, fileName);
     const parsed = parseSkill(filePath);
     if (parsed?.slug === slug) {
-      const stat = fs.statSync(filePath);
-      parsed.updatedAtMs = stat.mtimeMs;
+      // 如果 frontmatter 中没有 updatedAtMs，使用文件修改时间
+      if (!parsed.updatedAtMs) {
+        const stat = fs.statSync(filePath);
+        parsed.updatedAtMs = stat.mtimeMs;
+      }
       return parsed;
     }
   }

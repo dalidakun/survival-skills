@@ -20,17 +20,21 @@ export default function HomePage({
   const end = start + PAGE_SIZE;
   const visible = skills.slice(start, end);
 
+  // 获取今天的日期（年-月-日），用于比较
   const now = new Date();
-  const startOfDay = new Date(now).setHours(0, 0, 0, 0);
-  const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   return (
     <section className="space-y-2">
       {visible.map((skill) => {
-        const isToday =
-          typeof skill.updatedAtMs === "number" &&
-          skill.updatedAtMs >= startOfDay &&
-          skill.updatedAtMs < endOfDay;
+        // 判断是否是今天更新的（比较日期部分，避免时区问题）
+        let isToday = false;
+        if (typeof skill.updatedAtMs === "number") {
+          const updatedDate = new Date(skill.updatedAtMs);
+          const updatedStr = `${updatedDate.getFullYear()}-${String(updatedDate.getMonth() + 1).padStart(2, '0')}-${String(updatedDate.getDate()).padStart(2, '0')}`;
+          isToday = updatedStr === todayStr;
+        }
+        
         return (
           <Link
             key={skill.slug}
