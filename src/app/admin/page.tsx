@@ -69,8 +69,8 @@ export default function AdminPage() {
 
       if (res.ok) {
         setStatus("✅ 删除成功！文件已从 GitHub 删除，Vercel 会自动重新部署。");
-        // 重新加载文章列表
-        await loadArticles();
+        // 立即从列表中移除，无需等待重新加载
+        setArticles((prev) => prev.filter((article) => article.slug !== slug));
       } else {
         throw new Error(json.message || "删除失败");
       }
