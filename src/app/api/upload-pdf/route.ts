@@ -1,8 +1,61 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { NextResponse } from "next/server";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "changeme";
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
+const GITHUB_OWNER = process.env.GITHUB_OWNER || "dalidakun";
+const GITHUB_REPO = process.env.GITHUB_REPO || "survival-skills";
+
+async function createOrUpdateFile(
+  path: string,
+  content: Buffer,
+  message: string
+) {
+  // 检查文件是否已存在
+  const checkResponse = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+    }
+  );
+
+  let sha: string | undefined;
+  if (checkResponse.ok) {
+    const data = await checkResponse.json();
+    sha = data.sha;
+  } else if (checkResponse.status !== 404) {
+    throw new Error(`检查文件失败: ${checkResponse.statusText}`);
+  }
+
+  const body = {
+    message,
+    content: content.toString("base64"),
+    ...(sha && { sha }),
+  };
+
+  const createResponse = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!createResponse.ok) {
+    const error = await createResponse.json();
+    throw new Error(error.message || "提交到 GitHub 失败");
+  }
+
+  return createResponse.json();
+}
 
 export async function POST(req: Request) {
   try {
@@ -32,38 +85,42 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!GITHUB_TOKEN) {
+      return NextResponse.json(
+        { message: "GitHub Token 未配置，请在 Vercel 环境变量中添加 GITHUB_TOKEN" },
+        { status: 500 }
+      );
+    }
+
     // 生成文件名（使用时间戳避免冲突）
     const timestamp = Date.now();
     const originalName = pdfFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const fileName = `${timestamp}-${originalName}`;
     
-    // 保存文件到 public/pdfs 目录
-    const pdfDir = path.join(process.cwd(), "public", "pdfs");
-    await fs.mkdir(pdfDir, { recursive: true });
-    
-    const pdfPath = path.join(pdfDir, fileName);
+    // 读取 PDF 文件内容
     const pdfBuffer = Buffer.from(await pdfFile.arrayBuffer());
-    await fs.writeFile(pdfPath, pdfBuffer);
+    
+    // 通过 GitHub API 保存到 public/pdfs 目录
+    const filePath = `public/pdfs/${fileName}`;
+    await createOrUpdateFile(
+      filePath,
+      pdfBuffer,
+      `Upload PDF: ${originalName}`
+    );
 
-    // 生成可访问的 URL（相对路径，Next.js 会自动处理）
-    // 在生产环境中，这会是 /pdfs/文件名.pdf
-    // 在本地开发中，这会是 http://localhost:3000/pdfs/文件名.pdf
+    // 生成可访问的 URL
     const pdfUrl = `/pdfs/${fileName}`;
 
     return NextResponse.json({
-      message: "上传成功",
+      message: "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。",
       url: pdfUrl,
       fileName: fileName,
-      fullUrl: process.env.NEXT_PUBLIC_SITE_URL 
-        ? `${process.env.NEXT_PUBLIC_SITE_URL}${pdfUrl}`
-        : pdfUrl
     });
   } catch (error) {
     console.error("PDF 上传错误:", error);
-    return NextResponse.json(
-      { message: "上传失败，请稍后再试" },
-      { status: 500 }
-    );
+    const message =
+      error instanceof Error ? error.message : "上传失败，请稍后再试";
+    return NextResponse.json({ message }, { status: 500 });
   }
 }
 
