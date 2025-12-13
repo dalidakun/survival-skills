@@ -31,13 +31,17 @@ function parseSkill(filePath: string): SkillContent | null {
   let updatedAtMs: number | undefined;
   if (data.updatedAt) {
     // 如果 frontmatter 中有 updatedAt，使用它
-    const updatedAtStr = String(data.updatedAt);
-    const updatedAtDate = new Date(updatedAtStr);
-    if (!isNaN(updatedAtDate.getTime())) {
-      updatedAtMs = updatedAtDate.getTime();
-    } else {
-      // 如果解析失败，尝试其他格式
-      console.warn(`Failed to parse updatedAt: ${updatedAtStr}`);
+    const updatedAtStr = String(data.updatedAt).trim();
+    if (updatedAtStr) {
+      const updatedAtDate = new Date(updatedAtStr);
+      if (!isNaN(updatedAtDate.getTime())) {
+        updatedAtMs = updatedAtDate.getTime();
+      } else {
+        // 如果解析失败，输出警告（仅在开发环境）
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`Failed to parse updatedAt: ${updatedAtStr} for file: ${filePath}`);
+        }
+      }
     }
   }
 
@@ -82,11 +86,11 @@ export function getAllSkills(): SkillContent[] {
       const skill = parseSkill(filePath);
       if (skill) {
         // 如果 frontmatter 中没有 updatedAtMs，使用文件修改时间
-        if (!skill.updatedAtMs) {
+        if (!skill.updatedAtMs || skill.updatedAtMs === 0) {
           skill.updatedAtMs = stat.mtimeMs;
         }
       }
-      // 使用 updatedAtMs 或文件修改时间进行排序
+      // 使用 updatedAtMs 或文件修改时间进行排序（降序，最新的在前）
       const sortTime = skill?.updatedAtMs || stat.mtimeMs;
       return { skill, mtime: sortTime };
     })
@@ -95,9 +99,18 @@ export function getAllSkills(): SkillContent[] {
         Boolean(item.skill)
     );
 
-  return withTime
-    .sort((a, b) => b.mtime - a.mtime)
-    .map((item) => item.skill);
+  // 按时间降序排序（最新的在前）
+  const sorted = withTime.sort((a, b) => b.mtime - a.mtime);
+  
+  // 调试输出（仅在开发环境）
+  if (process.env.NODE_ENV === 'development' && sorted.length > 0) {
+    console.log('Articles sorted by time (newest first):');
+    sorted.slice(0, 3).forEach((item, idx) => {
+      console.log(`${idx + 1}. ${item.skill.title}: ${new Date(item.mtime).toISOString()}, updatedAtMs: ${item.skill.updatedAtMs}`);
+    });
+  }
+  
+  return sorted.map((item) => item.skill);
 }
 
 export function getSkill(slug: string): SkillContent | null {

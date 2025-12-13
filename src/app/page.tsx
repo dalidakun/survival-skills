@@ -23,19 +23,19 @@ export default function HomePage({
   const end = start + PAGE_SIZE;
   const visible = skills.slice(start, end);
 
-  // 获取今天的日期（年-月-日），使用 UTC 时区与 updatedAt ISO 格式保持一致
+  // 获取今天的日期（年-月-日），简化时区处理
   const now = new Date();
-  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const todayStr = `${todayUTC.getUTCFullYear()}-${String(todayUTC.getUTCMonth() + 1).padStart(2, '0')}-${String(todayUTC.getUTCDate()).padStart(2, '0')}`;
+  // 使用本地时区的今天，因为用户看到的是本地时间
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   return (
     <section className="space-y-2">
       {visible.map((skill) => {
-        // 判断是否是今天更新的（使用 UTC 时区，与 updatedAt ISO 格式保持一致）
+        // 判断是否是今天更新的（使用本地时区）
         let isToday = false;
-        if (typeof skill.updatedAtMs === "number") {
+        if (typeof skill.updatedAtMs === "number" && skill.updatedAtMs > 0) {
           const updatedDate = new Date(skill.updatedAtMs);
-          const updatedStr = `${updatedDate.getUTCFullYear()}-${String(updatedDate.getUTCMonth() + 1).padStart(2, '0')}-${String(updatedDate.getUTCDate()).padStart(2, '0')}`;
+          const updatedStr = `${updatedDate.getFullYear()}-${String(updatedDate.getMonth() + 1).padStart(2, '0')}-${String(updatedDate.getDate()).padStart(2, '0')}`;
           isToday = updatedStr === todayStr;
         }
         
