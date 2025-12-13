@@ -9,9 +9,13 @@ type Props = {
   params: { slug: string };
 };
 
-export function generateStaticParams() {
-  return getAllSkills().map((skill) => ({ slug: skill.slug }));
-}
+// 改为动态生成，确保新文章能立即访问
+export const dynamic = 'force-dynamic';
+
+// 不再使用静态生成，改为动态路由
+// export function generateStaticParams() {
+//   return getAllSkills().map((skill) => ({ slug: skill.slug }));
+// }
 
 export function generateMetadata({ params }: Props) {
   const skill = getSkill(params.slug);

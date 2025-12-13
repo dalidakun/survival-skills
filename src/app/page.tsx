@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getAllSkills } from "@/lib/content";
 
+// 强制动态渲染，确保新文章能立即显示
+export const dynamic = 'force-dynamic';
+
 const PAGE_SIZE = 50;
 
 export default function HomePage({
