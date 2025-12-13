@@ -1,0 +1,29 @@
+.next
+node_modules
+.turbo
+.env.local
+.env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist
+
+# 上传的 PDF 文件（保留目录结构，但忽略上传的文件）
+public/pdfs/*
+!public/pdfs/.gitkeep
+
+# Android 相关文件（不应该提交）
+.android/
+.gradle/
+AppData/
+*.iml
+.idea/
+local.properties
+
+# 其他大文件
+*.jar
+*.dll
+*.qcow2
+*.img
+
