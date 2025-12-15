@@ -18,6 +18,9 @@ export default function AdminPage() {
   const [articles, setArticles] = useState<SkillContent[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(false);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [editingSlug, setEditingSlug] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [updatingSlug, setUpdatingSlug] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"add" | "list">("add");
 
   // 检查是否已登录
@@ -48,6 +51,63 @@ export default function AdminPage() {
     }
   }
 
+  // 开始编辑标题
+  function handleStartEdit(slug: string, currentTitle: string) {
+    setEditingSlug(slug);
+    setEditingTitle(currentTitle);
+  }
+
+  // 取消编辑
+  function handleCancelEdit() {
+    setEditingSlug(null);
+    setEditingTitle("");
+  }
+
+  // 更新标题
+  async function handleUpdateTitle(slug: string) {
+    if (!editingTitle.trim()) {
+      setStatus("❌ 标题不能为空");
+      return;
+    }
+
+    setUpdatingSlug(slug);
+    try {
+      const adminPassword = sessionStorage.getItem("admin_password") || password;
+      const formData = new FormData();
+      formData.append("password", adminPassword);
+      formData.append("slug", slug);
+      formData.append("title", editingTitle.trim());
+
+      const res = await fetch("/api/update-article-title", {
+        method: "POST",
+        body: formData
+      });
+      const json = await res.json();
+
+      if (res.ok) {
+        setStatus("✅ 标题更新成功！文件已提交到 GitHub，Vercel 会自动重新部署。");
+        // 立即更新本地列表
+        setArticles((prev) =>
+          prev.map((article) =>
+            article.slug === slug
+              ? { ...article, title: editingTitle.trim() }
+              : article
+          )
+        );
+        setEditingSlug(null);
+        setEditingTitle("");
+      } else {
+        throw new Error(json.message || "更新失败");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "更新失败，请稍后再试。";
+      setStatus(`❌ ${message}`);
+    } finally {
+      setUpdatingSlug(null);
+    }
+  }
+
   // 删除文章
   async function handleDelete(slug: string, title: string) {
     if (!confirm(`确定要删除文章"${title}"吗？此操作无法撤销。`)) {
@@ -68,7 +128,7 @@ export default function AdminPage() {
       const json = await res.json();
 
       if (res.ok) {
-        setStatus("✅ 删除成功！文件已从 GitHub 删除，Vercel 会自动重新部署。");
+        setStatus("✅ 删除成功！文件已从 GitHub 删除，Vercel 会自动重新部署（约 1-2 分钟）。");
         // 立即从列表中移除，无需等待重新加载
         setArticles((prev) => prev.filter((article) => article.slug !== slug));
       } else {
@@ -337,7 +397,7 @@ export default function AdminPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-400">
-              共 {articles.length} 篇文章，点击删除按钮可删除文章。
+              共 {articles.length} 篇文章，可以编辑标题或删除文章。
             </p>
             <button
               onClick={loadArticles}
@@ -360,7 +420,40 @@ export default function AdminPage() {
                   className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
                 >
                   <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900">{article.title}</h3>
+                    {editingSlug === article.slug ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleUpdateTitle(article.slug);
+                            } else if (e.key === "Escape") {
+                              handleCancelEdit();
+                            }
+                          }}
+                          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-900 outline-none ring-forest/20 focus:ring-2"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleUpdateTitle(article.slug)}
+                          disabled={updatingSlug === article.slug || !editingTitle.trim()}
+                          className="rounded-lg bg-forest px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-forest/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {updatingSlug === article.slug ? "保存中…" : "保存"}
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          disabled={updatingSlug === article.slug}
+                          className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <h3 className="font-semibold text-slate-900">{article.title}</h3>
+                    )}
                     {article.link && (
                       <p className="text-xs text-slate-500 mt-1 truncate">
                         {article.link}
@@ -370,13 +463,24 @@ export default function AdminPage() {
                       Slug: {article.slug}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDelete(article.slug, article.title)}
-                    disabled={deletingSlug === article.slug}
-                    className="ml-4 rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {deletingSlug === article.slug ? "删除中…" : "删除"}
-                  </button>
+                  {editingSlug !== article.slug && (
+                    <div className="ml-4 flex gap-2">
+                      <button
+                        onClick={() => handleStartEdit(article.slug, article.title)}
+                        disabled={deletingSlug === article.slug || updatingSlug === article.slug}
+                        className="rounded-full bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => handleDelete(article.slug, article.title)}
+                        disabled={deletingSlug === article.slug || updatingSlug === article.slug}
+                        className="rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {deletingSlug === article.slug ? "删除中…" : "删除"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
