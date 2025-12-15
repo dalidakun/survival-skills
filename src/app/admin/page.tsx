@@ -21,6 +21,7 @@ export default function AdminPage() {
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [updatingSlug, setUpdatingSlug] = useState<string | null>(null);
+  const [reorderingSlug, setReorderingSlug] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"add" | "list">("add");
 
   // 检查是否已登录
@@ -105,6 +106,80 @@ export default function AdminPage() {
       setStatus(`❌ ${message}`);
     } finally {
       setUpdatingSlug(null);
+    }
+  }
+
+  // 调整文章顺序
+  async function handleMoveArticle(slug: string, direction: "up" | "down") {
+    const currentIndex = articles.findIndex((a) => a.slug === slug);
+    if (currentIndex === -1) return;
+
+    // 计算目标位置
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= articles.length) {
+      setStatus("❌ 无法移动：已在最前或最后");
+      return;
+    }
+
+    setReorderingSlug(slug);
+    try {
+      const adminPassword = sessionStorage.getItem("admin_password") || password;
+      
+      // 获取当前文章和目标文章的 order
+      const currentArticle = articles[currentIndex];
+      const targetArticle = articles[targetIndex];
+
+      // 计算新的 order 值
+      // 如果目标文章有 order，使用它的 order（向上移动时减1，向下移动时加1）
+      // 如果目标文章没有 order，基于索引计算
+      let newOrder: number;
+      if (targetArticle.order !== undefined) {
+        newOrder = direction === "up" ? targetArticle.order - 1 : targetArticle.order + 1;
+      } else {
+        // 基于索引计算 order（从 0 开始，每篇文章间隔 10，方便插入）
+        newOrder = targetIndex * 10;
+        if (direction === "up") {
+          newOrder -= 5;
+        } else {
+          newOrder += 5;
+        }
+      }
+
+      // 更新当前文章的 order
+      const formData = new FormData();
+      formData.append("password", adminPassword);
+      formData.append("slug", slug);
+      formData.append("order", String(newOrder));
+
+      const res = await fetch("/api/update-article-order", {
+        method: "POST",
+        body: formData
+      });
+      const json = await res.json();
+
+      if (res.ok) {
+        setStatus("✅ 顺序更新成功！文件已提交到 GitHub，Vercel 会自动重新部署。");
+        // 立即更新本地列表
+        setArticles((prev) =>
+          prev.map((article) =>
+            article.slug === slug
+              ? { ...article, order: newOrder }
+              : article
+          )
+        );
+        // 重新加载文章列表以获取正确的排序
+        setTimeout(() => {
+          loadArticles();
+        }, 500);
+      } else {
+        throw new Error(json.message || "更新失败");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "更新失败，请稍后再试。";
+      setStatus(`❌ ${message}`);
+    } finally {
+      setReorderingSlug(null);
     }
   }
 
@@ -397,7 +472,7 @@ export default function AdminPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-400">
-              共 {articles.length} 篇文章，可以编辑标题或删除文章。
+              共 {articles.length} 篇文章，可以调整顺序、编辑标题或删除文章。
             </p>
             <button
               onClick={loadArticles}
@@ -414,67 +489,122 @@ export default function AdminPage() {
             <div className="text-center py-8 text-slate-500">暂无文章</div>
           ) : (
             <div className="space-y-2">
-              {articles.map((article) => (
+              {articles.map((article, index) => (
                 <div
                   key={article.slug}
                   className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
                 >
-                  <div className="flex-1">
-                    {editingSlug === article.slug ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              handleUpdateTitle(article.slug);
-                            } else if (e.key === "Escape") {
-                              handleCancelEdit();
-                            }
-                          }}
-                          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-900 outline-none ring-forest/20 focus:ring-2"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() => handleUpdateTitle(article.slug)}
-                          disabled={updatingSlug === article.slug || !editingTitle.trim()}
-                          className="rounded-lg bg-forest px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-forest/90 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {updatingSlug === article.slug ? "保存中…" : "保存"}
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          disabled={updatingSlug === article.slug}
-                          className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          取消
-                        </button>
-                      </div>
-                    ) : (
-                      <h3 className="font-semibold text-slate-900">{article.title}</h3>
-                    )}
-                    {article.link && (
-                      <p className="text-xs text-slate-500 mt-1 truncate">
-                        {article.link}
+                  <div className="flex items-center gap-3 flex-1">
+                    {/* 顺序调整按钮 */}
+                    <div className="flex flex-col gap-1">
+                      <button
+                        onClick={() => handleMoveArticle(article.slug, "up")}
+                        disabled={
+                          index === 0 ||
+                          reorderingSlug === article.slug ||
+                          deletingSlug === article.slug ||
+                          updatingSlug === article.slug ||
+                          editingSlug === article.slug
+                        }
+                        className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="上移"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => handleMoveArticle(article.slug, "down")}
+                        disabled={
+                          index === articles.length - 1 ||
+                          reorderingSlug === article.slug ||
+                          deletingSlug === article.slug ||
+                          updatingSlug === article.slug ||
+                          editingSlug === article.slug
+                        }
+                        className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="下移"
+                      >
+                        ↓
+                      </button>
+                    </div>
+
+                    {/* 顺序显示 */}
+                    <div className="flex-shrink-0 w-8 text-center">
+                      <span className="text-xs font-semibold text-slate-400">
+                        {index + 1}
+                      </span>
+                      {article.order !== undefined && (
+                        <span className="block text-[10px] text-slate-300">
+                          ({article.order})
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 文章信息 */}
+                    <div className="flex-1">
+                      {editingSlug === article.slug ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleUpdateTitle(article.slug);
+                              } else if (e.key === "Escape") {
+                                handleCancelEdit();
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-900 outline-none ring-forest/20 focus:ring-2"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleUpdateTitle(article.slug)}
+                            disabled={updatingSlug === article.slug || !editingTitle.trim()}
+                            className="rounded-lg bg-forest px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-forest/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {updatingSlug === article.slug ? "保存中…" : "保存"}
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            disabled={updatingSlug === article.slug}
+                            className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <h3 className="font-semibold text-slate-900">{article.title}</h3>
+                      )}
+                      {article.link && (
+                        <p className="text-xs text-slate-500 mt-1 truncate">
+                          {article.link}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-400 mt-1">
+                        Slug: {article.slug}
                       </p>
-                    )}
-                    <p className="text-xs text-slate-400 mt-1">
-                      Slug: {article.slug}
-                    </p>
+                    </div>
                   </div>
                   {editingSlug !== article.slug && (
                     <div className="ml-4 flex gap-2">
                       <button
                         onClick={() => handleStartEdit(article.slug, article.title)}
-                        disabled={deletingSlug === article.slug || updatingSlug === article.slug}
+                        disabled={
+                          deletingSlug === article.slug ||
+                          updatingSlug === article.slug ||
+                          reorderingSlug === article.slug
+                        }
                         className="rounded-full bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         编辑
                       </button>
                       <button
                         onClick={() => handleDelete(article.slug, article.title)}
-                        disabled={deletingSlug === article.slug || updatingSlug === article.slug}
+                        disabled={
+                          deletingSlug === article.slug ||
+                          updatingSlug === article.slug ||
+                          reorderingSlug === article.slug
+                        }
                         className="rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-200 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {deletingSlug === article.slug ? "删除中…" : "删除"}

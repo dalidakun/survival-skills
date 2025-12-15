@@ -8,6 +8,7 @@ export type SkillContent = {
   subtitle: string;
   image: string;
   updatedAtMs?: number;
+  order?: number; // 手动排序字段，数字越小越靠前
   link?: string;
   intro: string;
   principle: string;
@@ -45,6 +46,15 @@ function parseSkill(filePath: string): SkillContent | null {
     }
   }
 
+  // 解析 order 字段（如果存在）
+  let order: number | undefined;
+  if (data.order !== undefined && data.order !== null) {
+    const orderNum = Number(data.order);
+    if (!isNaN(orderNum)) {
+      order = orderNum;
+    }
+  }
+
   return {
     slug: String(data.slug),
     title: String(data.title),
@@ -55,6 +65,7 @@ function parseSkill(filePath: string): SkillContent | null {
     ),
     link: data.link ? String(data.link) : undefined,
     updatedAtMs, // 先设置为 undefined，后面会用文件修改时间或这个值
+    order, // 手动排序字段
     intro: String(data.intro || ""),
     principle: String(data.principle || ""),
     steps: Array.isArray(data.steps)
@@ -99,8 +110,27 @@ export function getAllSkills(): SkillContent[] {
         Boolean(item.skill)
     );
 
-  // 按时间降序排序（最新的在前）
-  const sorted = withTime.sort((a, b) => b.mtime - a.mtime);
+  // 排序逻辑：优先按 order 排序（数字越小越靠前），如果 order 相同或不存在，则按时间降序排序（最新的在前）
+  const sorted = withTime.sort((a, b) => {
+    const aOrder = a.skill.order;
+    const bOrder = b.skill.order;
+    
+    // 如果两个都有 order，按 order 排序
+    if (aOrder !== undefined && bOrder !== undefined) {
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder; // order 越小越靠前
+      }
+    }
+    // 如果只有一个有 order，有 order 的靠前
+    if (aOrder !== undefined && bOrder === undefined) {
+      return -1; // a 靠前
+    }
+    if (aOrder === undefined && bOrder !== undefined) {
+      return 1; // b 靠前
+    }
+    // 如果都没有 order，按时间降序排序（最新的在前）
+    return b.mtime - a.mtime;
+  });
   
   // 调试输出（仅在开发环境）
   if (process.env.NODE_ENV === 'development' && sorted.length > 0) {
