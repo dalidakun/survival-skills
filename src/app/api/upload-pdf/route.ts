@@ -250,11 +250,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // 检查文件大小（限制为 50MB）
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    if (pdfFile.size > maxSize) {
+    // 检查文件大小
+    // GitHub API 限制：base64 编码后约 100MB，实际文件建议 < 10MB
+    // 其他存储服务（R2/七牛云）支持更大的文件
+    const maxSizeForGitHub = 10 * 1024 * 1024; // 10MB（GitHub 推荐）
+    const maxSizeForOthers = 100 * 1024 * 1024; // 100MB（其他存储服务）
+    
+    if (pdfFile.size > maxSizeForOthers) {
       return NextResponse.json(
-        { message: "文件大小不能超过 50MB" },
+        { message: "文件大小不能超过 100MB" },
         { status: 400 }
       );
     }
@@ -284,18 +288,26 @@ export async function POST(req: Request) {
             message = "上传成功！PDF 已保存到 Cloudflare R2，链接永久有效。";
           } catch (r2Error) {
             console.error("R2 上传失败，尝试使用 GitHub:", r2Error);
-            // 如果 R2 也失败，回退到 GitHub
-            if (GITHUB_TOKEN) {
-              pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
-              message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
+            // 如果 R2 也失败，尝试 GitHub（仅小文件）
+            if (GITHUB_TOKEN && pdfFile.size <= maxSizeForGitHub) {
+              try {
+                pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
+                message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
+              } catch (ghError) {
+                throw new Error("所有存储服务都失败。如果文件 > 10MB，请配置 Cloudflare R2 或七牛云。");
+              }
             } else {
-              throw new Error("所有存储服务都配置失败");
+              throw new Error("文件太大或 GitHub 未配置。请配置 Cloudflare R2 或七牛云存储。");
             }
           }
-        } else if (GITHUB_TOKEN) {
-          // 直接使用 GitHub
-          pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
-          message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
+        } else if (GITHUB_TOKEN && pdfFile.size <= maxSizeForGitHub) {
+          // 直接使用 GitHub（仅小文件）
+          try {
+            pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
+            message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
+          } catch (ghError) {
+            throw new Error("GitHub 上传失败。如果文件 > 10MB，请配置 Cloudflare R2 或七牛云。");
+          }
         } else {
           throw new Error("所有存储服务都未配置");
         }
@@ -307,15 +319,27 @@ export async function POST(req: Request) {
         message = "上传成功！PDF 已保存到 Cloudflare R2，链接永久有效。";
       } catch (error) {
         console.error("R2 上传失败，尝试使用 GitHub:", error);
-        if (GITHUB_TOKEN) {
-          pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
-          message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
+        if (GITHUB_TOKEN && pdfFile.size <= maxSizeForGitHub) {
+          try {
+            pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
+            message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
+          } catch (ghError) {
+            throw new Error("R2 和 GitHub 上传都失败。如果文件 > 10MB，请检查 R2 配置或压缩文件。");
+          }
         } else {
-          throw new Error("R2 上传失败，且 GitHub Token 未配置");
+          throw new Error(`R2 上传失败。${pdfFile.size > maxSizeForGitHub ? '文件太大，GitHub 不支持。' : 'GitHub Token 未配置。'}请检查 R2 配置。`);
         }
       }
     } else if (GITHUB_TOKEN) {
-      // 使用 GitHub 作为备选方案
+      // 使用 GitHub 作为备选方案（仅适用于小文件）
+      if (pdfFile.size > maxSizeForGitHub) {
+        return NextResponse.json(
+          { 
+            message: `文件太大（${(pdfFile.size / 1024 / 1024).toFixed(1)}MB）。GitHub 仅支持 < 10MB 的文件。请压缩 PDF 或配置 Cloudflare R2/七牛云存储。` 
+          },
+          { status: 400 }
+        );
+      }
       pdfUrl = await uploadToGitHub(fileName, pdfBuffer);
       message = "上传成功！PDF 已提交到 GitHub，Vercel 会自动重新部署（约 1-2 分钟）。";
     } else {

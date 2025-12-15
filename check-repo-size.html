@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub 仓库大小检查</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #218838;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: none;
+        }
+        .result.show {
+            display: block;
+        }
+        .size-info {
+            font-size: 18px;
+            font-weight: bold;
+            color: #28a745;
+            margin: 10px 0;
+        }
+        .warning {
+            color: #dc3545;
+        }
+        .safe {
+            color: #28a745;
+        }
+        .loading {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 GitHub 仓库大小检查</h1>
+        <div class="input-group">
+            <input type="text" id="repoInput" placeholder="输入仓库地址，例如：dalidakun/survival-skills" value="dalidakun/survival-skills">
+        </div>
+        <button onclick="checkSize()">查询仓库大小</button>
+        
+        <div id="result" class="result">
+            <div id="content"></div>
+        </div>
+    </div>
+
+    <script>
+        async function checkSize() {
+            const repo = document.getElementById('repoInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            const contentDiv = document.getElementById('content');
+            
+            if (!repo) {
+                alert('请输入仓库地址');
+                return;
+            }
+            
+            resultDiv.classList.add('show');
+            contentDiv.innerHTML = '<div class="loading">查询中...</div>';
+            
+            try {
+                const response = await fetch(`https://api.github.com/repos/${repo}`);
+                const data = await response.json();
+                
+                if (response.status !== 200) {
+                    throw new Error(data.message || '查询失败');
+                }
+                
+                const sizeKB = data.size;
+                const sizeMB = (sizeKB / 1024).toFixed(2);
+                const sizeGB = (sizeKB / 1024 / 1024).toFixed(4);
+                
+                let status = '';
+                let statusClass = '';
+                
+                if (sizeKB > 1024 * 1024) { // 超过 1GB
+                    status = '⚠️ 超过 1GB 建议限制';
+                    statusClass = 'warning';
+                } else if (sizeKB > 500 * 1024) { // 超过 500MB
+                    status = '⚠️ 接近 1GB 限制，请注意';
+                    statusClass = 'warning';
+                } else {
+                    status = '✅ 存储空间充足';
+                    statusClass = 'safe';
+                }
+                
+                contentDiv.innerHTML = `
+                    <h3>仓库信息</h3>
+                    <p><strong>仓库名称：</strong>${data.full_name}</p>
+                    <p><strong>描述：</strong>${data.description || '无'}</p>
+                    <div class="size-info ${statusClass}">
+                        ${status}
+                    </div>
+                    <p><strong>仓库大小：</strong></p>
+                    <ul>
+                        <li>${sizeKB.toLocaleString()} KB</li>
+                        <li>${sizeMB} MB</li>
+                        <li>${sizeGB} GB</li>
+                    </ul>
+                    <p><strong>限制说明：</strong></p>
+                    <ul>
+                        <li>建议大小：不超过 1GB</li>
+                        <li>硬限制：100GB</li>
+                        <li>单个文件：最大 100MB（警告阈值 50MB）</li>
+                    </ul>
+                `;
+            } catch (error) {
+                contentDiv.innerHTML = `<div class="warning">❌ 查询失败：${error.message}</div>`;
+            }
+        }
+        
+        // 支持回车键查询
+        document.getElementById('repoInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                checkSize();
+            }
+        });
+    </script>
+</body>
+</html>
+
